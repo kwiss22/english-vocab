@@ -24,6 +24,6 @@ COPY quiz_stats.json .
 ENV PORT=5000
 EXPOSE $PORT
 
-# Gunicorn으로 Flask 앱 실행
-CMD exec gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 2 --timeout 120 web_vocab_app:app
+# Gunicorn으로 Flask 앱 실행 (환경 변수를 제대로 읽도록 쉘 사용)
+CMD sh -c "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 --threads 2 --timeout 120 web_vocab_app:app"
 
