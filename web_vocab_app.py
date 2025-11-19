@@ -640,10 +640,12 @@ if __name__ == '__main__':
     load_data()
     
     try:
-        start_server(DEFAULT_PORT)
+        # Railway 등 프로덕션 환경에서는 PORT 환경 변수 사용
+        # None을 전달하면 start_server 함수 내에서 환경 변수 확인
+        start_server(None)
     except OSError as e:
         if "Address already in use" in str(e):
-            logger.warning(f"포트 {DEFAULT_PORT}이 사용 중입니다. {FALLBACK_PORT} 포트로 시도합니다.")
+            logger.warning(f"포트가 사용 중입니다. 다른 포트로 시도합니다.")
             start_server(FALLBACK_PORT)
         else:
             logger.error(f"서버 시작 실패: {e}")
