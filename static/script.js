@@ -240,6 +240,8 @@ let currentQuiz = null;
 
 async function startQuiz() {
     const quizType = document.getElementById('quiz-type').value;
+    const quizMode = document.getElementById('quiz-mode').value;
+    const focusMode = document.getElementById('focus-mode').checked;
     const quizArea = document.getElementById('quiz-area');
     const quizResult = document.getElementById('quiz-result');
     
@@ -252,7 +254,7 @@ async function startQuiz() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ type: quizType })
+            body: JSON.stringify({ type: quizType, mode: quizMode, focus_mode: focusMode })
         });
         
         const result = await response.json();
@@ -261,33 +263,55 @@ async function startQuiz() {
             currentQuiz = result;
             
             let questionHtml = '';
-            if (quizType === 'english_to_korean') {
+            
+            // 객관식 문제
+            if (result.mode === 'multiple') {
                 questionHtml = `
                     <div class="quiz-question">${result.question}</div>
                     <div class="quiz-word">${escapeHtml(result.word)}</div>
-                    <input type="text" id="quiz-answer" class="quiz-input" placeholder="한국어 뜻을 입력하세요" autofocus>
+                    <div class="quiz-choices" id="quiz-choices">
+                        ${result.choices.map((choice, index) => `
+                            <button class="quiz-choice-btn" onclick="selectChoice(${index})" data-index="${index}">
+                                ${index + 1}. ${escapeHtml(choice)}
+                            </button>
+                        `).join('')}
+                    </div>
                 `;
             } else {
-                questionHtml = `
-                    <div class="quiz-question">${result.question}</div>
-                    <div class="quiz-word">${escapeHtml(result.correct_answer)}</div>
-                    <input type="text" id="quiz-answer" class="quiz-input" placeholder="영어 단어를 입력하세요" autofocus>
-                `;
+                // 주관식 문제
+                if (quizType === 'english_to_korean') {
+                    questionHtml = `
+                        <div class="quiz-question">${result.question}</div>
+                        <div class="quiz-word">${escapeHtml(result.word)}</div>
+                        <input type="text" id="quiz-answer" class="quiz-input" placeholder="한국어 뜻을 입력하세요" autofocus>
+                    `;
+                } else {
+                    questionHtml = `
+                        <div class="quiz-question">${result.question}</div>
+                        <div class="quiz-word">${escapeHtml(result.correct_answer)}</div>
+                        <input type="text" id="quiz-answer" class="quiz-input" placeholder="영어 단어를 입력하세요" autofocus>
+                    `;
+                }
             }
             
             quizArea.innerHTML = questionHtml + `
                 <div class="quiz-buttons">
-                    <button class="btn-primary" onclick="checkAnswer()">정답 확인</button>
+                    ${result.mode === 'multiple' ? '' : '<button class="btn-primary" onclick="checkAnswer()">정답 확인</button>'}
                     <button class="btn-refresh" onclick="startQuiz()">다음 문제</button>
                 </div>
             `;
             
-            // Enter 키로 정답 확인
-            document.getElementById('quiz-answer').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    checkAnswer();
+            // 주관식인 경우에만 Enter 키 이벤트 추가
+            if (result.mode === 'text') {
+                const answerInput = document.getElementById('quiz-answer');
+                if (answerInput) {
+                    answerInput.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            checkAnswer();
+                        }
+                    });
                 }
-            });
+            }
         } else {
             quizArea.innerHTML = `<p class="error-message">${result.message}</p>`;
         }
@@ -297,36 +321,88 @@ async function startQuiz() {
     }
 }
 
+// 객관식 선택지 선택
+function selectChoice(index) {
+    // 모든 선택지 버튼에서 선택 상태 제거
+    document.querySelectorAll('.quiz-choice-btn').forEach(btn => {
+        btn.classList.remove('selected');
+    });
+    
+    // 선택한 버튼에 선택 상태 추가
+    const selectedBtn = document.querySelector(`[data-index="${index}"]`);
+    if (selectedBtn) {
+        selectedBtn.classList.add('selected');
+    }
+    
+    // 정답 확인
+    checkAnswer(index);
+}
+
 // 정답 확인
-async function checkAnswer() {
+async function checkAnswer(selectedIndex = null) {
     if (!currentQuiz) {
         return;
     }
     
-    const userAnswer = document.getElementById('quiz-answer').value.trim();
     const quizResult = document.getElementById('quiz-result');
+    let userAnswer;
     
-    if (!userAnswer) {
-        alert('답을 입력해주세요.');
-        return;
+    // 객관식인 경우
+    if (currentQuiz.mode === 'multiple') {
+        if (selectedIndex === null) {
+            return; // 선택지가 선택되지 않음
+        }
+        userAnswer = selectedIndex;
+    } else {
+        // 주관식인 경우
+        const answerInput = document.getElementById('quiz-answer');
+        if (!answerInput) {
+            return;
+        }
+        userAnswer = answerInput.value.trim();
+        
+        if (!userAnswer) {
+            alert('답을 입력해주세요.');
+            return;
+        }
     }
     
     try {
+        const requestBody = {
+            word: currentQuiz.word,
+            answer: userAnswer,
+            type: currentQuiz.type,
+            mode: currentQuiz.mode
+        };
+        
+        // 객관식인 경우 정답 인덱스 추가
+        if (currentQuiz.mode === 'multiple') {
+            requestBody.correct_index = currentQuiz.correct_index;
+        }
+        
         const response = await fetch('/api/quiz/check', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                word: currentQuiz.word,
-                answer: userAnswer,
-                type: currentQuiz.type
-            })
+            body: JSON.stringify(requestBody)
         });
         
         const result = await response.json();
         
         if (result.success) {
+            // 객관식인 경우 선택지 버튼 스타일 업데이트
+            if (currentQuiz.mode === 'multiple') {
+                document.querySelectorAll('.quiz-choice-btn').forEach((btn, index) => {
+                    btn.disabled = true;
+                    if (index === currentQuiz.correct_index) {
+                        btn.classList.add('correct-choice');
+                    } else if (index === selectedIndex && !result.is_correct) {
+                        btn.classList.add('wrong-choice');
+                    }
+                });
+            }
+            
             if (result.is_correct) {
                 quizResult.innerHTML = `
                     <div class="quiz-result correct">

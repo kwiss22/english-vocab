@@ -65,6 +65,14 @@
                         <option value="english_to_korean">영어 → 한글</option>
                         <option value="korean_to_english">한글 → 영어</option>
                     </select>
+                    <select id="quiz-mode" class="quiz-select">
+                        <option value="text">주관식</option>
+                        <option value="multiple">객관식 (4지선다)</option>
+                    </select>
+                    <label class="quiz-checkbox-label">
+                        <input type="checkbox" id="focus-mode" class="quiz-checkbox">
+                        틀린 단어 집중 학습
+                    </label>
                     <button class="btn-primary" onclick="startQuiz()">문제 시작</button>
                 </div>
             </div>

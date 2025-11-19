@@ -299,18 +299,51 @@ def get_quiz():
     """퀴즈 문제 생성"""
     data = request.get_json()
     quiz_type = data.get('type', 'english_to_korean')  # 'english_to_korean' or 'korean_to_english'
+    quiz_mode = data.get('mode', 'text')  # 'text' (주관식) or 'multiple' (객관식)
+    focus_mode = data.get('focus_mode', False)  # True면 틀린 단어만 선택
     
     if not vocabulary:
         return jsonify({"success": False, "message": "퀴즈를 하려면 먼저 단어를 추가해주세요."}), 400
     
-    # 랜덤으로 단어 선택
+    # 단어 선택
     words = list(vocabulary.keys())
-    word = random.choice(words)
     
+    # 틀린 단어 집중 학습 모드
+    if focus_mode:
+        # 정답률이 낮은 단어 우선 선택 (틀린 횟수가 많은 단어)
+        words_with_stats = []
+        for word in words:
+            if word in quiz_stats:
+                correct, wrong = quiz_stats[word]
+                total = correct + wrong
+                if total > 0:
+                    accuracy = (correct / total) * 100
+                    # 정답률이 낮거나 틀린 횟수가 많은 단어 우선
+                    words_with_stats.append((word, accuracy, wrong))
+        
+        if words_with_stats:
+            # 정답률 낮은 순으로 정렬 (같으면 틀린 횟수 많은 순)
+            words_with_stats.sort(key=lambda x: (x[1], -x[2]))
+            # 하위 50% 중에서 랜덤 선택 (너무 제한적이지 않게)
+            bottom_half = words_with_stats[:max(1, len(words_with_stats) // 2)]
+            word = random.choice(bottom_half)[0]
+        else:
+            # 통계가 없는 단어 중에서 선택
+            word = random.choice(words)
+    else:
+        # 일반 모드: 랜덤 선택
+        word = random.choice(words)
+    
+    # 객관식 문제 생성
+    if quiz_mode == 'multiple':
+        return get_multiple_choice_quiz(word, quiz_type)
+    
+    # 주관식 문제 생성
     if quiz_type == 'english_to_korean':
         return jsonify({
             "success": True,
             "type": "english_to_korean",
+            "mode": "text",
             "word": word,
             "question": f"'{word}'의 한국어 뜻은?",
             "correct_answer": vocabulary[word]
@@ -319,9 +352,68 @@ def get_quiz():
         return jsonify({
             "success": True,
             "type": "korean_to_english",
+            "mode": "text",
             "word": word,
             "question": f"'{vocabulary[word]}'의 영어 단어는?",
             "correct_answer": word
+        })
+
+def get_multiple_choice_quiz(correct_word: str, quiz_type: str) -> Dict:
+    """
+    4지선다 객관식 문제 생성
+    
+    Args:
+        correct_word: 정답 단어
+        quiz_type: 'english_to_korean' or 'korean_to_english'
+        
+    Returns:
+        JSON 응답 데이터
+    """
+    words = list(vocabulary.keys())
+    
+    # 정답 1개 + 오답 3개 선택
+    wrong_words = [w for w in words if w != correct_word]
+    if len(wrong_words) < 3:
+        # 단어가 4개 미만이면 오답을 반복 사용
+        while len(wrong_words) < 3:
+            wrong_words.append(random.choice(words))
+    
+    wrong_choices = random.sample(wrong_words, min(3, len(wrong_words)))
+    
+    # 선택지 생성
+    if quiz_type == 'english_to_korean':
+        # 영어 → 한글: 정답은 correct_word의 뜻, 오답은 다른 단어들의 뜻
+        correct_answer = vocabulary[correct_word]
+        wrong_answers = [vocabulary[w] for w in wrong_choices]
+        choices = [correct_answer] + wrong_answers
+        random.shuffle(choices)  # 선택지 섞기
+        
+        return jsonify({
+            "success": True,
+            "type": "english_to_korean",
+            "mode": "multiple",
+            "word": correct_word,
+            "question": f"'{correct_word}'의 한국어 뜻은?",
+            "correct_answer": correct_answer,
+            "choices": choices,
+            "correct_index": choices.index(correct_answer)
+        })
+    else:  # korean_to_english
+        # 한글 → 영어: 정답은 correct_word, 오답은 다른 단어들
+        correct_answer = correct_word
+        wrong_answers = wrong_choices
+        choices = [correct_answer] + wrong_answers
+        random.shuffle(choices)  # 선택지 섞기
+        
+        return jsonify({
+            "success": True,
+            "type": "korean_to_english",
+            "mode": "multiple",
+            "word": correct_word,
+            "question": f"'{vocabulary[correct_word]}'의 영어 단어는?",
+            "correct_answer": correct_answer,
+            "choices": choices,
+            "correct_index": choices.index(correct_answer)
         })
 
 @app.route('/api/quiz/check', methods=['POST'])
@@ -332,8 +424,10 @@ def check_quiz():
     Request Body:
         {
             "word": "단어",
-            "answer": "사용자 답",
-            "type": "english_to_korean" or "korean_to_english"
+            "answer": "사용자 답" (주관식) or 선택한 인덱스 (객관식),
+            "type": "english_to_korean" or "korean_to_english",
+            "mode": "text" (주관식) or "multiple" (객관식),
+            "correct_index": 정답 인덱스 (객관식인 경우)
         }
         
     Returns:
@@ -345,24 +439,38 @@ def check_quiz():
             return jsonify({"success": False, "message": "요청 데이터가 없습니다."}), 400
         
         word = data.get('word', '').lower().strip()
-        user_answer = data.get('answer', '').strip()
+        user_answer = data.get('answer', '')
         quiz_type = data.get('type', 'english_to_korean')
+        quiz_mode = data.get('mode', 'text')
+        correct_index = data.get('correct_index', None)
         
         if not word:
             return jsonify({"success": False, "message": "단어를 입력해주세요."}), 400
-        if not user_answer:
-            return jsonify({"success": False, "message": "답을 입력해주세요."}), 400
         
         if word not in vocabulary:
             return jsonify({"success": False, "message": "단어를 찾을 수 없습니다."}), 404
         
-        # 정답 확인
-        if quiz_type == 'english_to_korean':
-            correct_answer = vocabulary[word]
-            is_correct = user_answer == correct_answer
-        else:  # korean_to_english
-            correct_answer = word
-            is_correct = user_answer.lower().strip() == correct_answer.lower()
+        # 객관식 정답 확인
+        if quiz_mode == 'multiple':
+            if correct_index is None:
+                return jsonify({"success": False, "message": "정답 인덱스가 없습니다."}), 400
+            
+            try:
+                user_index = int(user_answer)
+                is_correct = user_index == correct_index
+            except (ValueError, TypeError):
+                return jsonify({"success": False, "message": "잘못된 답안입니다."}), 400
+        else:
+            # 주관식 정답 확인
+            if not user_answer:
+                return jsonify({"success": False, "message": "답을 입력해주세요."}), 400
+            
+            if quiz_type == 'english_to_korean':
+                correct_answer = vocabulary[word]
+                is_correct = user_answer.strip() == correct_answer
+            else:  # korean_to_english
+                correct_answer = word
+                is_correct = user_answer.lower().strip() == correct_answer.lower()
         
         # 통계 초기화 (없는 경우)
         if word not in quiz_stats:
@@ -377,6 +485,12 @@ def check_quiz():
             logger.debug(f"퀴즈 오답: {word}")
         
         save_data()
+        
+        # 정답 정보 반환
+        if quiz_type == 'english_to_korean':
+            correct_answer = vocabulary[word]
+        else:
+            correct_answer = word
         
         return jsonify({
             "success": True,
