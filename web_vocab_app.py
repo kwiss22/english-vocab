@@ -33,8 +33,9 @@ DEFAULT_PORT = 5000
 FALLBACK_PORT = 5001
 
 # 전역 변수
-vocabulary: Dict[str, str] = {}
+vocabulary: Dict[str, Dict] = {}  # {word: {"korean": meaning, "category": category}}
 quiz_stats: Dict[str, List[int]] = {}  # {word: [correct_count, wrong_count]}
+CATEGORIES_FILE = "categories.json"
 
 def load_data() -> None:
     """
@@ -51,7 +52,18 @@ def load_data() -> None:
     try:
         if os.path.exists(VOCAB_FILE):
             with open(VOCAB_FILE, 'r', encoding='utf-8') as f:
-                vocabulary = json.load(f)
+                data = json.load(f)
+                # 기존 형식({word: meaning})과 새 형식({word: {korean, category}}) 호환
+                for word, value in data.items():
+                    if isinstance(value, str):
+                        # 기존 형식: {word: meaning} -> {word: {korean: meaning, category: ""}}
+                        vocabulary[word] = {"korean": value, "category": ""}
+                    elif isinstance(value, dict):
+                        # 새 형식: {word: {korean: meaning, category: category}}
+                        vocabulary[word] = {
+                            "korean": value.get("korean", ""),
+                            "category": value.get("category", "")
+                        }
             logger.info(f"단어장 불러오기 성공: {len(vocabulary)}개 단어")
         else:
             logger.info("단어장 파일이 없습니다. 새로 생성합니다.")
@@ -114,8 +126,19 @@ def index():
 @app.route('/api/words', methods=['GET'])
 def get_words():
     """모든 단어 가져오기"""
-    words_list = [{"english": eng, "korean": kor} 
-                  for eng, kor in vocabulary.items()]
+    category = request.args.get('category', None)
+    words_list = []
+    
+    for eng, data in vocabulary.items():
+        word_data = {
+            "english": eng,
+            "korean": data.get("korean", ""),
+            "category": data.get("category", "")
+        }
+        # 카테고리 필터링
+        if category is None or category == "" or word_data["category"] == category:
+            words_list.append(word_data)
+    
     return jsonify(words_list)
 
 def validate_word_input(english: str, korean: str) -> Tuple[bool, Optional[str]]:
@@ -160,6 +183,7 @@ def add_word():
         
         english = data.get('english', '').strip().lower()
         korean = data.get('korean', '').strip()
+        category = data.get('category', '').strip()
         
         # 입력 검증
         is_valid, error_message = validate_word_input(english, korean)
@@ -171,7 +195,10 @@ def add_word():
             return jsonify({"success": False, "message": f"'{english}' 단어가 이미 존재합니다."}), 409
         
         # 단어 추가
-        vocabulary[english] = korean
+        vocabulary[english] = {
+            "korean": korean,
+            "category": category
+        }
         if save_data():
             logger.info(f"단어 추가 성공: {english}")
             return jsonify({"success": True, "message": f"'{english}' 단어가 추가되었습니다!"})
@@ -245,6 +272,7 @@ def update_word(word: str):
         
         new_english = data.get('english', '').strip().lower()
         new_korean = data.get('korean', '').strip()
+        new_category = data.get('category', '').strip()
         
         # 입력 검증
         is_valid, error_message = validate_word_input(new_english, new_korean)
@@ -253,6 +281,10 @@ def update_word(word: str):
         
         if word not in vocabulary:
             return jsonify({"success": False, "message": "단어를 찾을 수 없습니다."}), 404
+        
+        # 기존 카테고리 유지 (카테고리가 제공되지 않은 경우)
+        if not new_category:
+            new_category = vocabulary[word].get("category", "")
         
         # 단어가 변경된 경우
         if new_english != word:
@@ -268,10 +300,16 @@ def update_word(word: str):
                 quiz_stats[new_english] = quiz_stats.pop(word)
             
             # 새 단어 추가
-            vocabulary[new_english] = new_korean
+            vocabulary[new_english] = {
+                "korean": new_korean,
+                "category": new_category
+            }
         else:
-            # 단어는 같고 뜻만 변경
-            vocabulary[word] = new_korean
+            # 단어는 같고 뜻/카테고리만 변경
+            vocabulary[word] = {
+                "korean": new_korean,
+                "category": new_category
+            }
         
         if save_data():
             logger.info(f"단어 수정 성공: {word} -> {new_english}")
@@ -289,7 +327,13 @@ def search_word(word):
     """단어 검색"""
     word = word.lower()
     if word in vocabulary:
-        return jsonify({"success": True, "english": word, "korean": vocabulary[word]})
+        data = vocabulary[word]
+        return jsonify({
+            "success": True, 
+            "english": word, 
+            "korean": data.get("korean", ""),
+            "category": data.get("category", "")
+        })
     else:
         return jsonify({"success": False, "message": "단어를 찾을 수 없습니다."}), 404
 
@@ -307,6 +351,13 @@ def get_quiz():
     
     # 단어 선택
     words = list(vocabulary.keys())
+    
+    # 카테고리 필터링
+    quiz_category = data.get('category', None)
+    if quiz_category and quiz_category != "":
+        words = [w for w in words if vocabulary[w].get("category", "") == quiz_category]
+        if not words:
+            return jsonify({"success": False, "message": f"'{quiz_category}' 카테고리에 단어가 없습니다."}), 400
     
     # 틀린 단어 집중 학습 모드
     if focus_mode:
@@ -339,6 +390,9 @@ def get_quiz():
         return get_multiple_choice_quiz(word, quiz_type)
     
     # 주관식 문제 생성
+    word_data = vocabulary[word]
+    korean = word_data.get("korean", "")
+    
     if quiz_type == 'english_to_korean':
         return jsonify({
             "success": True,
@@ -346,7 +400,7 @@ def get_quiz():
             "mode": "text",
             "word": word,
             "question": f"'{word}'의 한국어 뜻은?",
-            "correct_answer": vocabulary[word]
+            "correct_answer": korean
         })
     else:  # korean_to_english
         return jsonify({
@@ -354,7 +408,7 @@ def get_quiz():
             "type": "korean_to_english",
             "mode": "text",
             "word": word,
-            "question": f"'{vocabulary[word]}'의 영어 단어는?",
+            "question": f"'{korean}'의 영어 단어는?",
             "correct_answer": word
         })
 
@@ -381,10 +435,13 @@ def get_multiple_choice_quiz(correct_word: str, quiz_type: str) -> Dict:
     wrong_choices = random.sample(wrong_words, min(3, len(wrong_words)))
     
     # 선택지 생성
+    correct_word_data = vocabulary[correct_word]
+    correct_korean = correct_word_data.get("korean", "")
+    
     if quiz_type == 'english_to_korean':
         # 영어 → 한글: 정답은 correct_word의 뜻, 오답은 다른 단어들의 뜻
-        correct_answer = vocabulary[correct_word]
-        wrong_answers = [vocabulary[w] for w in wrong_choices]
+        correct_answer = correct_korean
+        wrong_answers = [vocabulary[w].get("korean", "") for w in wrong_choices]
         choices = [correct_answer] + wrong_answers
         random.shuffle(choices)  # 선택지 섞기
         
@@ -410,7 +467,7 @@ def get_multiple_choice_quiz(correct_word: str, quiz_type: str) -> Dict:
             "type": "korean_to_english",
             "mode": "multiple",
             "word": correct_word,
-            "question": f"'{vocabulary[correct_word]}'의 영어 단어는?",
+            "question": f"'{correct_korean}'의 영어 단어는?",
             "correct_answer": correct_answer,
             "choices": choices,
             "correct_index": choices.index(correct_answer)
@@ -465,8 +522,9 @@ def check_quiz():
             if not user_answer:
                 return jsonify({"success": False, "message": "답을 입력해주세요."}), 400
             
+            word_data = vocabulary[word]
             if quiz_type == 'english_to_korean':
-                correct_answer = vocabulary[word]
+                correct_answer = word_data.get("korean", "")
                 is_correct = user_answer.strip() == correct_answer
             else:  # korean_to_english
                 correct_answer = word
@@ -487,8 +545,9 @@ def check_quiz():
         save_data()
         
         # 정답 정보 반환
+        word_data = vocabulary[word]
         if quiz_type == 'english_to_korean':
-            correct_answer = vocabulary[word]
+            correct_answer = word_data.get("korean", "")
         else:
             correct_answer = word
         
@@ -510,13 +569,18 @@ def get_stats():
     stats_list = []
     
     for word, stats in quiz_stats.items():
+        if word not in vocabulary:
+            continue  # 단어가 삭제된 경우 스킵
+        
         correct, wrong = stats
         total = correct + wrong
         accuracy = (correct / total * 100) if total > 0 else 0
         
+        word_data = vocabulary[word]
         stats_list.append({
             "word": word,
-            "korean": vocabulary.get(word, "?"),
+            "korean": word_data.get("korean", "?"),
+            "category": word_data.get("category", ""),
             "correct": correct,
             "wrong": wrong,
             "total": total,
@@ -528,22 +592,48 @@ def get_stats():
     
     return jsonify(stats_list)
 
-def start_server(port: int = DEFAULT_PORT) -> None:
+# 카테고리 목록 API
+@app.route('/api/categories', methods=['GET'])
+def get_categories():
+    """모든 카테고리 목록 가져오기"""
+    categories = set()
+    for word_data in vocabulary.values():
+        category = word_data.get("category", "").strip()
+        if category:
+            categories.add(category)
+    
+    # 빈 카테고리도 포함 (카테고리 없음)
+    categories_list = sorted(list(categories))
+    return jsonify(categories_list)
+
+def start_server(port: int = None) -> None:
     """
     Flask 서버 시작
     
     Args:
-        port: 서버 포트 번호
+        port: 서버 포트 번호 (None이면 환경 변수 또는 기본값 사용)
     """
+    # 프로덕션 환경에서는 PORT 환경 변수 사용 (Railway, Render 등)
+    if port is None:
+        port = int(os.environ.get('PORT', DEFAULT_PORT))
+    
+    # 프로덕션 환경 확인
+    is_production = os.environ.get('FLASK_ENV') == 'production' or os.environ.get('ENV') == 'production'
+    debug_mode = not is_production
+    
+    # 호스트 설정 (프로덕션에서는 0.0.0.0)
+    host = '0.0.0.0' if is_production else '127.0.0.1'
+    
     logger.info("="*60)
     logger.info("영어 단어장 웹 애플리케이션 시작!")
     logger.info("="*60)
     logger.info(f"단어 개수: {len(vocabulary)}개")
     logger.info(f"통계 기록: {len(quiz_stats)}개")
-    logger.info(f"접속 주소: http://127.0.0.1:{port}")
+    logger.info(f"모드: {'프로덕션' if is_production else '개발'}")
+    logger.info(f"접속 주소: http://{host}:{port}")
     logger.info("="*60)
     
-    app.run(debug=True, host='127.0.0.1', port=port, use_reloader=False)
+    app.run(debug=debug_mode, host=host, port=port, use_reloader=False)
 
 if __name__ == '__main__':
     # 프로그램 시작 시 데이터 로드

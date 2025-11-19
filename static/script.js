@@ -25,8 +25,13 @@ function showTab(tabName, buttonElement) {
     // 탭별 데이터 로드
     if (tabName === 'words') {
         loadWords();
+        loadCategories();
     } else if (tabName === 'stats') {
         loadStats();
+    } else if (tabName === 'quiz') {
+        loadCategories();
+    } else if (tabName === 'add') {
+        loadCategories();
     }
 }
 
@@ -71,9 +76,10 @@ function displayWords(words) {
             <div class="word-content">
                 <div class="word-english">${escapeHtml(word.english)}</div>
                 <div class="word-korean">${escapeHtml(word.korean)}</div>
+                ${word.category ? `<div class="word-category">🏷️ ${escapeHtml(word.category)}</div>` : ''}
             </div>
             <div class="word-actions">
-                <button class="btn-edit" onclick="editWord('${escapeHtml(word.english)}', '${escapeHtml(word.korean)}')">수정</button>
+                <button class="btn-edit" onclick="editWord('${escapeHtml(word.english)}', '${escapeHtml(word.korean)}', '${escapeHtml(word.category || '')}')">수정</button>
                 <button class="btn-delete" onclick="deleteWord('${escapeHtml(word.english)}')">삭제</button>
             </div>
         </div>
@@ -91,28 +97,31 @@ function displayWords(words) {
 async function searchWords() {
     const searchInput = document.getElementById('search-input');
     const searchTerm = searchInput.value.trim().toLowerCase();
+    const categoryFilter = document.getElementById('category-filter');
+    const category = categoryFilter ? categoryFilter.value : '';
     const wordsList = document.getElementById('words-list');
-    
-    // 검색어가 없으면 전체 목록 표시
-    if (!searchTerm) {
-        loadWords();
-        return;
-    }
     
     wordsList.innerHTML = '<p class="loading">검색 중...</p>';
     
     try {
-        // 모든 단어를 가져와서 클라이언트 측에서 필터링
-        const response = await fetch('/api/words');
-        const allWords = await response.json();
+        // 카테고리 필터 적용
+        let url = '/api/words';
+        if (category) {
+            url += `?category=${encodeURIComponent(category)}`;
+        }
+        
+        const response = await fetch(url);
+        let words = await response.json();
         
         // 검색어로 필터링 (영어 또는 한글에 포함되는지 확인)
-        const filteredWords = allWords.filter(word => 
-            word.english.toLowerCase().includes(searchTerm) || 
-            word.korean.includes(searchTerm)
-        );
+        if (searchTerm) {
+            words = words.filter(word => 
+                word.english.toLowerCase().includes(searchTerm) || 
+                word.korean.includes(searchTerm)
+            );
+        }
         
-        displayWords(filteredWords);
+        displayWords(words);
     } catch (error) {
         wordsList.innerHTML = '<p class="error-message">검색 중 오류가 발생했습니다.</p>';
         console.error('Error:', error);
@@ -125,6 +134,7 @@ document.getElementById('add-word-form').addEventListener('submit', async (e) =>
     
     const english = document.getElementById('english-input').value.trim().toLowerCase();
     const korean = document.getElementById('korean-input').value.trim();
+    const category = document.getElementById('category-input').value.trim();
     const messageDiv = document.getElementById('add-message');
     
     if (!english || !korean) {
@@ -138,7 +148,7 @@ document.getElementById('add-word-form').addEventListener('submit', async (e) =>
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ english, korean })
+            body: JSON.stringify({ english, korean, category })
         });
         
         const result = await response.json();
@@ -146,6 +156,9 @@ document.getElementById('add-word-form').addEventListener('submit', async (e) =>
         if (result.success) {
             messageDiv.innerHTML = `<p class="message success">${result.message}</p>`;
             document.getElementById('add-word-form').reset();
+            
+            // 카테고리 목록 새로고침
+            loadCategories();
             
             // 단어 목록 탭이 활성화되어 있으면 새로고침
             if (document.getElementById('words-tab').classList.contains('active')) {
@@ -167,23 +180,26 @@ document.getElementById('add-word-form').addEventListener('submit', async (e) =>
 });
 
 // 단어 수정
-function editWord(english, korean) {
+function editWord(english, korean, category = '') {
     const newEnglish = prompt('영어 단어를 수정하세요:', english);
     if (newEnglish === null) return; // 취소 버튼 클릭
     
     const newKorean = prompt('한국어 뜻을 수정하세요:', korean);
     if (newKorean === null) return; // 취소 버튼 클릭
     
+    const newCategory = prompt('카테고리를 수정하세요 (선택사항):', category || '');
+    if (newCategory === null) return; // 취소 버튼 클릭
+    
     if (!newEnglish.trim() || !newKorean.trim()) {
         alert('단어와 뜻을 모두 입력해주세요.');
         return;
     }
     
-    updateWord(english, newEnglish.trim().toLowerCase(), newKorean.trim());
+    updateWord(english, newEnglish.trim().toLowerCase(), newKorean.trim(), newCategory.trim());
 }
 
 // 단어 업데이트 API 호출
-async function updateWord(oldEnglish, newEnglish, newKorean) {
+async function updateWord(oldEnglish, newEnglish, newKorean, newCategory = '') {
     try {
         const response = await fetch(`/api/words/${encodeURIComponent(oldEnglish)}`, {
             method: 'PUT',
@@ -192,7 +208,8 @@ async function updateWord(oldEnglish, newEnglish, newKorean) {
             },
             body: JSON.stringify({
                 english: newEnglish,
-                korean: newKorean
+                korean: newKorean,
+                category: newCategory
             })
         });
         
@@ -200,6 +217,7 @@ async function updateWord(oldEnglish, newEnglish, newKorean) {
         
         if (result.success) {
             alert(result.message);
+            loadCategories(); // 카테고리 목록 새로고침
             loadWords(); // 단어 목록 새로고침
         } else {
             alert(result.message);
@@ -225,6 +243,7 @@ async function deleteWord(word) {
         
         if (result.success) {
             alert(result.message);
+            loadCategories(); // 카테고리 목록 새로고침
             loadWords(); // 단어 목록 새로고침
         } else {
             alert(result.message);
@@ -241,6 +260,7 @@ let currentQuiz = null;
 async function startQuiz() {
     const quizType = document.getElementById('quiz-type').value;
     const quizMode = document.getElementById('quiz-mode').value;
+    const quizCategory = document.getElementById('quiz-category').value;
     const focusMode = document.getElementById('focus-mode').checked;
     const quizArea = document.getElementById('quiz-area');
     const quizResult = document.getElementById('quiz-result');
@@ -254,7 +274,12 @@ async function startQuiz() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ type: quizType, mode: quizMode, focus_mode: focusMode })
+            body: JSON.stringify({ 
+                type: quizType, 
+                mode: quizMode, 
+                category: quizCategory,
+                focus_mode: focusMode 
+            })
         });
         
         const result = await response.json();
@@ -645,9 +670,73 @@ function loadDarkMode() {
     updateDarkModeIcon(shouldBeDark);
 }
 
+// 카테고리 목록 로드
+async function loadCategories() {
+    try {
+        const response = await fetch('/api/categories');
+        const categories = await response.json();
+        
+        // 카테고리 필터 드롭다운 업데이트
+        const categoryFilter = document.getElementById('category-filter');
+        if (categoryFilter) {
+            const currentValue = categoryFilter.value;
+            categoryFilter.innerHTML = '<option value="">전체</option>' + 
+                categories.map(cat => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join('');
+            categoryFilter.value = currentValue;
+        }
+        
+        // 퀴즈 카테고리 선택 업데이트
+        const quizCategory = document.getElementById('quiz-category');
+        if (quizCategory) {
+            const currentValue = quizCategory.value;
+            quizCategory.innerHTML = '<option value="">전체 카테고리</option>' + 
+                categories.map(cat => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join('');
+            quizCategory.value = currentValue;
+        }
+        
+        // 단어 추가 폼의 datalist 업데이트
+        const categoryList = document.getElementById('category-list');
+        if (categoryList) {
+            categoryList.innerHTML = categories.map(cat => `<option value="${escapeHtml(cat)}">`).join('');
+        }
+    } catch (error) {
+        console.error('카테고리 로드 오류:', error);
+    }
+}
+
+// 카테고리별 필터링
+async function filterByCategory() {
+    const category = document.getElementById('category-filter').value;
+    const searchInput = document.getElementById('search-input');
+    const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    
+    try {
+        let url = '/api/words';
+        if (category) {
+            url += `?category=${encodeURIComponent(category)}`;
+        }
+        
+        const response = await fetch(url);
+        let words = await response.json();
+        
+        // 검색어가 있으면 추가 필터링
+        if (searchTerm) {
+            words = words.filter(word => 
+                word.english.toLowerCase().includes(searchTerm) || 
+                word.korean.includes(searchTerm)
+            );
+        }
+        
+        displayWords(words);
+    } catch (error) {
+        console.error('필터링 오류:', error);
+    }
+}
+
 // 페이지 로드 시 단어 목록 자동 로드 및 다크 모드 설정 불러오기
 window.addEventListener('DOMContentLoaded', () => {
     loadWords();
     loadDarkMode();
+    loadCategories();
 });
 

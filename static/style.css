@@ -267,6 +267,59 @@ body.dark .word-korean {
     color: #b0b0b0;
 }
 
+.word-category {
+    font-size: 0.9em;
+    color: #667eea;
+    margin-top: 8px;
+    font-weight: 500;
+}
+
+body.dark .word-category {
+    color: #8b9aff;
+}
+
+.filter-box {
+    margin: 15px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.filter-box label {
+    font-weight: 600;
+    color: #333;
+}
+
+body.dark .filter-box label {
+    color: #e0e0e0;
+}
+
+.category-select {
+    padding: 8px 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 0.95em;
+    cursor: pointer;
+    background: white;
+    color: #333;
+    min-width: 150px;
+    transition: all 0.3s;
+}
+
+.category-select:hover {
+    border-color: #667eea;
+}
+
+body.dark .category-select {
+    background: #2a2a3e;
+    border-color: #3a3a4e;
+    color: #e0e0e0;
+}
+
+body.dark .category-select:hover {
+    border-color: #8b9aff;
+}
+
 .btn-edit {
     padding: 8px 15px;
     background: #28a745;

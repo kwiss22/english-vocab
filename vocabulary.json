@@ -1,9 +1,34 @@
 {
-  "china": "중국",
-  "book": "책",
-  "cat": "고양이",
-  "dog": "강아지",
-  "is said to rely on:": "~라고 알려졌다",
-  "offer a window into": "~을 들여다볼 수 있는 창을 제공하다",
-  "lavish": "풍부한"
+  "china": {
+    "korean": "중국",
+    "category": ""
+  },
+  "book": {
+    "korean": "책",
+    "category": ""
+  },
+  "cat": {
+    "korean": "고양이",
+    "category": ""
+  },
+  "dog": {
+    "korean": "강아지",
+    "category": ""
+  },
+  "is said to rely on:": {
+    "korean": "~라고 알려졌다",
+    "category": ""
+  },
+  "offer a window into": {
+    "korean": "~을 들여다볼 수 있는 창을 제공하다",
+    "category": ""
+  },
+  "lavish": {
+    "korean": "풍부한",
+    "category": ""
+  },
+  "tiger": {
+    "korean": "호랑이",
+    "category": "동물"
+  }
 }
