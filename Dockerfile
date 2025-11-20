@@ -21,9 +21,14 @@ COPY vocabulary.json .
 COPY quiz_stats.json .
 
 # 포트 환경 변수 (Railway가 자동으로 설정)
+# Railway는 PORT 환경 변수를 자동으로 설정하므로 ENV로 기본값만 설정
 ENV PORT=5000
-EXPOSE $PORT
 
-# Gunicorn으로 Flask 앱 실행 (환경 변수를 제대로 읽도록 쉘 사용)
-CMD sh -c "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 --threads 2 --timeout 120 web_vocab_app:app"
+# 포트 노출 (동적 포트 사용)
+EXPOSE 5000
+
+# Gunicorn으로 Flask 앱 실행
+# Railway의 PORT 환경 변수를 안전하게 처리
+# exec form 대신 shell form을 사용하여 환경 변수 확장 보장
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 --threads 2 --timeout 120 web_vocab_app:app"]
 
