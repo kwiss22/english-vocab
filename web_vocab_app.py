@@ -615,13 +615,14 @@ def start_server(port: int = None) -> None:
     """
     # 프로덕션 환경에서는 PORT 환경 변수 사용 (Railway, Render 등)
     if port is None:
+        # ✅ PORT 환경 변수를 정수로 변환, 없으면 기본값 사용
         port = int(os.environ.get('PORT', DEFAULT_PORT))
     
     # 프로덕션 환경 확인
     is_production = os.environ.get('FLASK_ENV') == 'production' or os.environ.get('ENV') == 'production'
     debug_mode = not is_production
     
-    # 호스트 설정 (프로덕션에서는 0.0.0.0)
+    # ✅ Railway에서 필수: host='0.0.0.0'으로 설정
     host = '0.0.0.0' if is_production else '127.0.0.1'
     
     logger.info("="*60)
@@ -633,6 +634,7 @@ def start_server(port: int = None) -> None:
     logger.info(f"접속 주소: http://{host}:{port}")
     logger.info("="*60)
     
+    # ✅ 올바른 방식: PORT를 int()로 변환하여 사용, host='0.0.0.0' 설정
     app.run(debug=debug_mode, host=host, port=port, use_reloader=False)
 
 if __name__ == '__main__':
@@ -640,9 +642,10 @@ if __name__ == '__main__':
     load_data()
     
     try:
-        # Railway 등 프로덕션 환경에서는 PORT 환경 변수 사용
-        # None을 전달하면 start_server 함수 내에서 환경 변수 확인
-        start_server(None)
+        # ✅ Railway 등 프로덕션 환경에서는 PORT 환경 변수 사용
+        # PORT 환경 변수를 int()로 변환하여 사용 (없으면 기본값 5000)
+        port = int(os.environ.get('PORT', DEFAULT_PORT))
+        start_server(port)
     except OSError as e:
         if "Address already in use" in str(e):
             logger.warning(f"포트가 사용 중입니다. 다른 포트로 시도합니다.")
