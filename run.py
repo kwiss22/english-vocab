@@ -6,28 +6,16 @@ PORT 환경 변수를 안전하게 처리하여 Gunicorn 실행
 
 import os
 import sys
+import subprocess
 
 def get_port():
     """PORT 환경 변수를 안전하게 가져오기"""
-    # 모든 환경 변수 출력 (디버깅용)
-    print("Environment variables:", file=sys.stderr)
-    for key, value in os.environ.items():
-        if 'PORT' in key.upper():
-            print(f"  {key}={value}", file=sys.stderr)
-    
-    port_str = os.environ.get('PORT')
-    
-    if not port_str:
-        print("PORT environment variable not set, using default 5000", file=sys.stderr)
-        port_str = '5000'
-    else:
-        print(f"PORT environment variable found: '{port_str}'", file=sys.stderr)
+    port_str = os.environ.get('PORT', '5000')
     
     # 문자열에서 숫자만 추출
-    port_str_clean = ''.join(filter(str.isdigit, port_str))
+    port_str_clean = ''.join(filter(str.isdigit, str(port_str)))
     
     if not port_str_clean:
-        print(f"Warning: Could not extract port number from '{port_str}', using default 5000", file=sys.stderr)
         port_str_clean = '5000'
     
     try:
@@ -35,7 +23,6 @@ def get_port():
         if port < 1 or port > 65535:
             print(f"Error: PORT {port} is out of range (1-65535)", file=sys.stderr)
             sys.exit(1)
-        print(f"Using port: {port}", file=sys.stderr)
         return port
     except ValueError:
         print(f"Error: Invalid PORT value: {port_str_clean}", file=sys.stderr)
@@ -43,15 +30,18 @@ def get_port():
 
 if __name__ == '__main__':
     port = get_port()
-    print(f"Starting Gunicorn on port {port}")
+    print(f"Starting Gunicorn on port {port}", flush=True)
     
-    # Gunicorn 실행
-    os.execvp('gunicorn', [
+    # Gunicorn을 subprocess로 실행 (더 안전함)
+    cmd = [
         'gunicorn',
         '--bind', f'0.0.0.0:{port}',
         '--workers', '2',
         '--threads', '2',
         '--timeout', '120',
         'web_vocab_app:app'
-    ])
+    ]
+    
+    print(f"Executing: {' '.join(cmd)}", flush=True)
+    sys.exit(subprocess.call(cmd))
 
