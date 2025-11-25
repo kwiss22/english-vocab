@@ -8,31 +8,13 @@ import os
 import sys
 import subprocess
 
-def get_port():
-    """PORT 환경 변수를 안전하게 가져오기"""
-    port_str = os.environ.get('PORT', '5000')
-    
-    # 문자열에서 숫자만 추출
-    port_str_clean = ''.join(filter(str.isdigit, str(port_str)))
-    
-    if not port_str_clean:
-        port_str_clean = '5000'
-    
-    try:
-        port = int(port_str_clean)
-        if port < 1 or port > 65535:
-            print(f"Error: PORT {port} is out of range (1-65535)", file=sys.stderr)
-            sys.exit(1)
-        return port
-    except ValueError:
-        print(f"Error: Invalid PORT value: {port_str_clean}", file=sys.stderr)
-        sys.exit(1)
+# ✅ 올바른 방법: PORT 환경 변수를 직접 int()로 변환
+port = int(os.environ.get("PORT", 5000))
 
 if __name__ == '__main__':
-    port = get_port()
     print(f"Starting Gunicorn on port {port}", flush=True)
     
-    # Gunicorn을 subprocess로 실행 (더 안전함)
+    # Gunicorn 실행
     cmd = [
         'gunicorn',
         '--bind', f'0.0.0.0:{port}',
